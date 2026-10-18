@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="am"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>የፒክሴል ድራግ ሬስ</title>
+<style>
+:root{--bg:#f2f2ee;--fg:#1a1a1a;--btn:#e4e4dc;--acc:#e8402a;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15171a;--fg:#eee;--btn:#2b2f35}}
+:root[data-theme="dark"]{--bg:#15171a;--fg:#eee;--btn:#2b2f35}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:ui-monospace,Menlo,monospace;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;touch-action:none;user-select:none;-webkit-user-select:none}
+#wrap{position:relative;width:min(94vw,520px);aspect-ratio:10/9}
+canvas{width:100%;height:100%;display:block;image-rendering:pixelated;border:3px solid var(--fg)}
+#ov{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;width:min(94vw,520px);text-align:center}
+#ov button{padding:10px 12px;font:700 13px ui-monospace,Menlo,monospace;border:0;border-radius:8px;background:var(--acc);color:#fff}
+#ov button.u{background:#2a8be8;font-size:14px}
+#ov button:disabled{opacity:.4}
+#msg{width:100%;font-size:13px;line-height:1.4;white-space:pre-line}
+#hud{font-weight:700;font-size:15px}
+#pad{display:flex;gap:10px}
+#pad button{width:29vw;max-width:150px;height:72px;font:700 17px ui-monospace,Menlo,monospace;border:0;border-radius:12px;background:var(--btn);color:var(--fg)}
+</style><script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script></head><body>
+<div id="hud"></div>
+<div id="wrap"><canvas id="c" width="200" height="180"></canvas>
+</div>
+<div id="ov"><div id="msg"></div><button class="u" id="pv">◀</button><button class="u" id="nx">▶</button><button class="u" id="pt">ቀለም</button><button class="u" id="wg"></button><button class="u" id="lg"></button><button class="u" id="u1"></button><button class="u" id="u2"></button><button class="u" id="u3"></button><button class="u" id="u4"></button><button class="u" id="bs"></button><button id="go">ውድድር ጀምር</button></div>
+<div id="pad"><button id="G">ጋዝ</button><button id="S">ማርሽ</button><button id="N">ናይትሮ</button></div>
+<script>
+const c=document.getElementById('c'),g=c.getContext('2d'),$=id=>document.getElementById(id);
+const W=200,H=180,GR=[0,3.2,2.1,1.5,1.15,.9],S=3,DIST=402;
+let sv={money:0,eng:0,nit:0,races:0,best:0,tire:0,turbo:0,wing:0,logo:0,own:[1,0,0,0,0],cur:0,pc:0},view=0,res='',me,ai,st='idle',T=0,last=0,k={g:0},fl='',flT=0,wins=0;
+try{Object.assign(sv,JSON.parse(localStorage.getItem('pcr')||'{}'))}catch(e){}
+if(!Array.isArray(sv.own))sv.own=[1,0,0,0,0];
+sv.own=sv.own.slice(0,5);while(sv.own.length<5)sv.own.push(0);
+sv.cur=Math.max(0,Math.min(4,Number(sv.cur)||0));sv.pc=Math.max(0,Math.min(7,Number(sv.pc)||0));sv.turbo=Math.max(0,Math.min(3,Number(sv.turbo)||0));
+const save=()=>{try{localStorage.setItem('pcr',JSON.stringify(sv))}catch(e){}};
+const mk=(P,col)=>({v:0,d:0,g:1,rpm:1200,lr:0,P,col,go:false,sh:0,boost:0,lbT:0,lbM:1,nit:0,nitUsed:0,t:null});
+const eCost=()=>300+200*sv.eng,nCost=()=>250+150*sv.nit,tCost=()=>200+150*sv.tire;
+const CARS=[{n:'የመንገድ ሃችባክ',P:1,price:0,body:0},{n:'ስፖርት ኩፔ',P:1.25,price:2500,body:1},{n:'ማስል V8',P:1.5,price:6000,body:2},{n:'ሃይፐር GT',P:1.85,price:14000,body:3},{n:'ሱፕራ MK4',P:1.65,price:9000,body:4}],PAINT=['#e8402a','#2a8be8','#f2b01e','#27ae60','#8e44ad','#f08cc8','#eee','#ff7a1a'];
+function hud(){$('hud').textContent='$'+sv.money+' · ሞተር '+sv.eng+' · ናይትሮ '+sv.nit+' · ቱርቦ '+sv.turbo+' · ምርጥ '+(sv.best?sv.best.toFixed(2)+'s':'--')}
+function flash(t){fl=t;flT=1.2}
+function shift(o){if(o.g>=5||o.sh>0||!o.go)return;const r=o.rpm;o.g++;o.sh=.12;o.lr=0;
+ if(r>6300&&r<7900){o.boost=.7;if(o===me)flash('እጅግ ምርጥ!')}else if(r<5000&&o===me)flash('ቶሎ ነው')}
+function nit(o){if(!o.nitUsed&&o.go){o.nitUsed=1;o.nit=2.2+(o===me?.6*sv.nit:0)}}
+function bind(id,f,hold){const b=$(id);b.addEventListener('pointerdown',e=>{e.preventDefault();if(hold)k.g=1;else f()});
+ if(hold){['pointerup','pointerleave','pointercancel','lostpointercapture'].forEach(t=>b.addEventListener(t,()=>k.g=0));addEventListener('pointerup',()=>k.g=0);addEventListener('pointercancel',()=>k.g=0)}}
+bind('G',0,1);bind('S',()=>me&&shift(me));bind('N',()=>me&&nit(me));
+addEventListener('keydown',e=>{if(e.repeat)return;if(e.key=='ArrowUp'||e.key=='w')k.g=1;
+ if(e.key==' '&&me)shift(me);if(e.key=='n'&&me)nit(me);if(e.key=='Enter'&&(st=='idle'||st=='done'))start()});
+addEventListener('keyup',e=>{if(e.key=='ArrowUp'||e.key=='w')k.g=0});
+function step(o,dt,gas){
+ if(!o.go){o.rpm=Math.max(1200,Math.min(8200,o.rpm+(gas?5000:-5000)*dt));return}
+ o.sh=Math.max(0,o.sh-dt);o.boost=Math.max(0,o.boost-dt);o.lbT=Math.max(0,o.lbT-dt);o.lr=Math.max(0,o.lr-4200*dt);
+ o.rpm=Math.max(o.v*GR[o.g]*125,o.lr,1200);
+ const nOn=o.nit>0;if(nOn)o.nit-=dt;
+ let a=-.00066*o.v*o.v;
+ if(gas&&o.sh<=0&&o.rpm<8000){const tq=Math.max(.25,1-Math.pow((o.rpm-5800)/5000,2));
+  a+=2.8*tq*GR[o.g]*o.P*(o.boost>0?1.25:1)*(o.lbT>0?o.lbM:1)*(nOn?1.6:1)}
+ o.v=Math.max(0,o.v+a*dt);o.d+=o.v*dt}
+function start(){res='';me=mk(CARS[sv.cur].P*(1+.1*sv.eng+.08*sv.turbo),PAINT[sv.pc]);me.b=CARS[sv.cur].body;ai=mk(Math.min(3,.88+.07*sv.races)+Math.random()*.03,'#2a8be8');ai.b=Math.random()*5|0;newCars();
+ ai.react=.15+Math.random()*.2;ai.nitAt=3+Math.random()*3;T=0;st='tree';fl='';$('ov').style.display='none';$('pad').style.display='flex';last=performance.now();requestAnimationFrame(loop)}
+$('go').onclick=start;$('pv').onclick=()=>{view=(view+CARS.length-1)%CARS.length;over()};$('nx').onclick=()=>{view=(view+1)%CARS.length;over()};
+$('pt').onclick=()=>{sv.pc=(sv.pc+1)%PAINT.length;save();over()};
+$('u3').onclick=()=>{if(sv.money>=tCost()){sv.money-=tCost();sv.tire++;save();over()}};
+$('u4').onclick=()=>{if(sv.turbo<3&&sv.money>=uCost()){sv.money-=uCost();sv.turbo++;save();over()}};
+$('wg').onclick=()=>{sv.wing=(sv.wing+1)%5;save();over()};$('lg').onclick=()=>{sv.logo=(sv.logo+1)%4;save();over()};
+$('bs').onclick=()=>{const cr=CARS[view];if(!sv.own[view]){if(sv.money<cr.price)return;sv.money-=cr.price;sv.own[view]=1}sv.cur=view;save();over()};
+$('u1').onclick=()=>{if(sv.money>=eCost()){sv.money-=eCost();sv.eng++;save();over()}};
+$('u2').onclick=()=>{if(sv.money>=nCost()){sv.money-=nCost();sv.nit++;save();over()}};
+function over(r){if(r!==undefined)res=r;hud();const cr=CARS[view],own=sv.own[view];
+ $('msg').textContent=(res?res+'\n':'')+cr.n+' · ኃይል '+(cr.P*100|0)+(own?(sv.cur==view?' · እየነዱ ነው':' · የእርስዎ ነው'):' · $'+cr.price);
+ $('u1').textContent='ሞተር $'+eCost();$('u2').textContent='ናይትሮ $'+nCost();$('u3').textContent='ጎማ $'+tCost();
+ $('u4').textContent=sv.turbo>=3?'ቱርቦ ከፍተኛ':'ቱርቦ $'+uCost();$('u4').disabled=sv.turbo>=3||sv.money<uCost();$('wg').textContent='ክንፍ: '+WN[sv.wing];$('lg').textContent='አርማ: '+LN[sv.logo];
+ $('u1').disabled=sv.money<eCost();$('u2').disabled=sv.money<nCost();$('u3').disabled=sv.money<tCost();
+ $('bs').textContent=own?'ይህን ንዳ':'ግዛ';$('bs').disabled=own?sv.cur==view:sv.money<cr.price;
+ $('pad').style.display='none';$('ov').style.display='flex';drawGarage()}
+function drawGarage(){g.fillStyle='#23232b';g.fillRect(0,0,W,H);g.fillStyle='#30303c';
+ for(let i=0;i<5;i++)g.fillRect(i*40+2,22,36,70);
+ g.fillStyle='#4a4a58';g.fillRect(0,110,W,70);g.fillStyle='#e8402a';g.fillRect(60,6,80,12);
+ g.fillStyle='#fff';g.font='bold 10px monospace';g.fillText('PIXEL GARAGE',66,15);
+ const b=CARS[view].body;car((W-BD[b][0]*4)/2,140,PAINT[sv.pc],0,b,4);
+ if(!sv.own[view]){g.fillStyle='rgba(0,0,0,.55)';g.fillRect(0,70,W,80);g.fillStyle='#ffc400';g.font='bold 16px monospace';g.fillText('FOR SALE $'+CARS[view].price,40,114)}}
+function finish(){st='done';const w=me.t!=null&&(ai.t==null||me.t<ai.t);sv.races++;
+ const pay=w?250+sv.races*60:100;sv.money+=pay;if(me.t!=null&&(!sv.best||me.t<sv.best))sv.best=me.t;save();
+ over((w?'አሸንፈዋል!':'ተሸንፈዋል')+'\nእርስዎ '+(me.t!=null?me.t.toFixed(2)+' ሰ':'አልጨረሰም')+'  ተቀናቃኝ '+(ai.t!=null?ai.t.toFixed(2)+' ሰ':'አልጨረሰም')+'\n+$'+pay)}
+function loop(t){if(st=='idle'||st=='done')return;const dt=Math.min(.05,(t-last)/1000);last=t;T+=dt;flT-=dt;
+ const Tr=T-2.8;
+ if(st=='tree'&&Tr>=0){st='race';me.go=true;me.lr=me.rpm;const r=me.rpm;
+  me.lbM=r>7600?Math.min(1,.7+.1*sv.tire):r<3500?.85:(r>5200&&r<7300?1.25:1);me.lbT=r>7600?1:1.5;
+  flash(r>7600?'ጎማ ተሽከረከረ':r<3500?'ዘገምተኛ ጅምር':r>5200&&r<7300?'ምርጥ ጅምር':'ሂድ!')}
+ if(st=='race'){
+  if(!ai.go&&Tr>=ai.react){ai.go=true;ai.lr=5800+Math.random()*800;ai.lbM=1.2;ai.lbT=1.5}
+  if(ai.go&&Tr>=ai.nitAt)nit(ai);
+  if(ai.rpm>7400)shift(ai)}
+ for(const o of[me,ai]){step(o,dt,o===me?k.g:1);
+  if(o.go&&o.t==null&&o.d>=DIST){o.t=Tr-(o.d-DIST)/Math.max(o.v,1)}
+  if(o.t!=null){o.v*=1-dt*1.3;o.d+=o.v*dt}}
+ if(me.t!=null&&ai.t!=null&&me.v<5||Tr>40){draw(Tr);return finish()}
+ draw(Tr);requestAnimationFrame(loop)}
+const BD=[[30,7,15,4,0],[33,8,15,3,1],[35,13,11,3,0],[36,9,15,2,1],[36,9,14,3,2]];
+function car(x,y,col,fl,b,s){s=s||1;g.save();g.translate(x,y);g.scale(s,s);const[L,rx,rw,rh,sp]=BD[b||0];
+ g.fillStyle='rgba(0,0,0,.35)';g.fillRect(0,0,L,1);
+ g.fillStyle='#000';g.fillRect(-1,-9,L+2,7);g.fillRect(rx-1,-9-rh,rw+2,rh+1);
+ g.fillStyle=col;g.fillRect(0,-8,L,5);g.fillRect(rx,-8-rh,rw,rh);
+ g.fillStyle='rgba(0,0,0,.3)';g.fillRect(0,-4,L,1);g.fillStyle='rgba(255,255,255,.35)';g.fillRect(2,-8,L-4,1);
+ g.fillStyle='#9fd8ff';g.fillRect(rx+1,-7-rh,rw-2,rh-1);g.fillStyle=col;g.fillRect(rx+(rw/2|0),-7-rh,1,rh-1);
+ g.fillStyle='#fff6a0';g.fillRect(L-2,-7,2,2);g.fillStyle='#ff2a1a';g.fillRect(0,-7,1,2);
+ if(sp){g.fillStyle='#000';const h=sp>1?4:0;g.fillRect(-2,-12-h,sp>1?7:5,sp>1?2:1);g.fillRect(0,-11-h+(sp>1?1:0),1,3+h)}
+ for(const wx of[4,L-11]){g.fillStyle='#000';g.fillRect(wx,-6,7,6);g.fillStyle='#bbb';g.fillRect(wx+2,-4,3,3)}
+ if(fl){g.fillStyle='#ffb000';g.fillRect(-9,-7,8,2);g.fillStyle='#fff';g.fillRect(-5,-7,4,1)}
+ g.restore()}
+function draw(Tr){const cx=me.d*S;
+ g.fillStyle='#2b2d6e';g.fillRect(0,0,W,70);g.fillStyle='#e07b5a';g.fillRect(0,56,W,14);g.fillStyle='#ffd27a';g.fillRect(150,38,14,14);
+ for(let i=0;i<14;i++){const bx=((i*26-cx*.25)%364+364)%364-30,h=18+(i*53%27),w=18+(i*7%10);
+  g.fillStyle=i%2?'#1d1b3f':'#2a2457';g.fillRect(bx,70-h,w,h);g.fillStyle='#ffd27a';g.fillRect(bx+3,70-h+4,2,2);g.fillRect(bx+9,70-h+10,2,2)}
+ g.fillStyle='#3a3d42';g.fillRect(0,70,W,42);g.fillStyle='#fff';
+ for(let x=-((cx)%16);x<W;x+=16)g.fillRect(x,91,8,1);
+ const fx=o=>95+(o.d-me.d)*S;
+ for(let m=0;m<=DIST;m+=25){const x=95+(m-me.d)*S;if(x>-5&&x<W+5)g.fillRect(x,70,1,3)}
+ const sx=fx({d:0});g.fillStyle='#fff';g.fillRect(sx,70,2,42);
+ const fn=95+(DIST-me.d)*S;if(fn<W+5&&fn>-10)for(let y=70;y<112;y+=3){g.fillStyle=(y/3|0)%2?'#fff':'#000';g.fillRect(fn,y,3,3)}
+ scene3d(Tr);
+ g.fillStyle='#111';g.fillRect(0,112,W,H-112);g.fillStyle='#fff';g.font='bold 10px monospace';
+ if(st!=='race'||Tr<1){g.fillStyle='#222';g.fillRect(W/2-6,4,12,32);
+  const on=[T>1,T>1.6,T>2.2,T>=2.8];['#ffc400','#ffc400','#ffc400','#2cd04a'].forEach((cl,i)=>{g.fillStyle=on[i]?cl:'#444';g.fillRect(W/2-4,6+i*8,8,6)})}
+ const rp=Math.min(1,me.rpm/8200),n=22;
+ for(let i=0;i<n;i++){const f=i/n<rp,rr=i/n*8200;g.fillStyle=!f?'#2a2a2a':rr>7500?'#e8402a':rr>6300?'#ffc400':'#2cd04a';g.fillRect(8+i*8,120,6,14)}
+ g.fillStyle='#ffc400';g.fillRect(8+Math.floor(6300/8200*n)*8,137,48,2);
+ g.fillStyle='#fff';g.font='bold 22px monospace';g.fillText('G'+me.g,8,164);
+ g.font='bold 14px monospace';g.fillText((me.v*3.6|0)+' ኪ.ሜ/ሰ',60,152);g.fillText(Math.max(0,Tr).toFixed(2)+'s',60,170);
+ g.font='bold 10px monospace';g.fillStyle=me.nit>0?'#ffb000':me.nitUsed?'#555':'#2a8be8';g.fillText(me.nitUsed&&me.nit<=0?'ናይትሮ ተጠቅሟል':'ናይትሮ ዝግጁ',122,152);
+ g.fillStyle='#aaa';g.fillText(Math.min(DIST,me.d|0)+'/'+DIST+' ሜ',122,170);
+ if(flT>0){g.font='bold 14px monospace';g.fillStyle='#fff';g.textAlign='center';g.fillText(fl,W/2,62);g.textAlign='left'}}
+let R;
+try { R=new THREE.WebGLRenderer({preserveDrawingBuffer:true, antialias:false}); R.setSize(400,224); }
+catch(err) { const fallback=document.createElement('canvas'); fallback.width=400; fallback.height=224; R={domElement:fallback,setSize(w,h){fallback.width=w;fallback.height=h;},render(){const ctx=fallback.getContext('2d');ctx.clearRect(0,0,fallback.width,fallback.height);}}; }
+const sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(55,400/224,.1,900);
+sc.background=new THREE.Color('#2b2d6e');sc.fog=new THREE.Fog('#e07b5a',50,420);
+sc.add(new THREE.AmbientLight('#9a9acc',.9));const sun=new THREE.DirectionalLight('#ffd9a0',.9);sun.position.set(-20,30,10);sc.add(sun);
+function box(w,h,l,col,x,y,z,bas){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,l),bas?new THREE.MeshBasicMaterial({color:col}):new THREE.MeshLambertMaterial({color:col}));m.position.set(x,y,z);return m}
+function plane(w,l,col,y,z){const m=new THREE.Mesh(new THREE.PlaneGeometry(w,l),new THREE.MeshLambertMaterial({color:col}));m.rotation.x=-Math.PI/2;m.position.set(0,y,z);sc.add(m)}
+plane(400,900,'#2f5a2c',-.02,-400);plane(10,900,'#3a3d42',0,-400);
+for(let i=0;i<70;i++)sc.add(box(.15,.02,3,'#fff',0,.02,-i*12-3,1));
+sc.add(box(10,.03,.6,'#fff',0,.03,0,1));
+for(let i=0;i<10;i++)sc.add(box(1,.04,.6,i%2?'#fff':'#000',-4.5+i,.04,-402,1));
+for(let m=0;m<=400;m+=50)sc.add(box(.3,1.5,.3,'#e8402a',5.6,.75,-m,1),box(.3,1.5,.3,'#e8402a',-5.6,.75,-m,1));
+for(let i=0;i<50;i++){const h=8+(i*37%30);sc.add(box(8+i%5*2,h,8,i%2?'#1d1b3f':'#2a2457',(i%2?1:-1)*(22+i*7%25),h/2,-i*14-10))}
+const sunM=new THREE.Mesh(new THREE.CircleGeometry(40,24),new THREE.MeshBasicMaterial({color:'#ffd27a',fog:false}));sunM.position.set(60,50,-700);sc.add(sunM);
+sc.add(box(30,12,.5,'#30303c',2000,6,-8),box(12,.2,12,'#4a4a58',2000,-.1,0));
+const BP=[[4,2.2,.75,.2,.6,0],[4.4,2,.6,.2,.55,1],[4.8,1.8,.6,.6,.65,0],[4.5,1.9,.5,.3,.5,1],[4.5,2.1,.6,.3,.55,2]];
+function buildCar(b,col,mine){let[L,cl,ch,cz,bh,wg]=BP[b];const G=new THREE.Group(),y0=.35;if(mine&&sv.wing)wg=[0,1,2,3,0][sv.wing];
+ G.add(box(1.8,bh,L,col,0,y0+bh/2,0),box(1.5,ch,cl,'#223344',0,y0+bh+ch/2,cz),box(1.52,.06,cl,col,0,y0+bh+ch,cz));
+ G.add(box(.4,.14,.05,'#fff6a0',.6,y0+bh*.6,-L/2,1),box(.4,.14,.05,'#fff6a0',-.6,y0+bh*.6,-L/2,1),box(.4,.14,.05,'#ff2a1a',.6,y0+bh*.6,L/2,1),box(.4,.14,.05,'#ff2a1a',-.6,y0+bh*.6,L/2,1));
+ for(const x of[-.92,.92])for(const z of[-L*.3,L*.3]){const w=new THREE.Mesh(new THREE.CylinderGeometry(.36,.36,.28,12),new THREE.MeshLambertMaterial({color:'#111'}));w.rotation.z=Math.PI/2;w.position.set(x,.36,z);G.add(w)}
+ if(wg){const y=y0+bh+(wg>1?.6:.25);G.add(box(1.7,.06,.5,col,0,y,L/2-.2),box(.06,y-y0-bh+.05,.06,'#111',.6,y0+bh+(y-y0-bh)/2,L/2-.2),box(.06,y-y0-bh+.05,.06,'#111',-.6,y0+bh+(y-y0-bh)/2,L/2-.2))}
+ if(wg>2)G.add(box(1.7,.06,.5,col,0,y0+bh+.85,L/2-.2),box(.05,.5,.6,col,.85,y0+bh+.6,L/2-.2),box(.05,.5,.6,col,-.85,y0+bh+.6,L/2-.2));
+ if(mine){const lg=sv.logo;
+  if(lg==1)for(const x of[-.3,.3])G.add(box(.2,.02,L*.98,'#fff',x,y0+bh+.012,0,1),box(.2,.02,cl*.98,'#fff',x,y0+bh+ch+.045,cz,1));
+  if(lg==2){for(const s of[-1,1])G.add(box(.02,.3,.3,'#ffc400',s*.91,y0+bh*.6,cz-.1,1),box(.02,.14,.14,'#e8402a',s*.92,y0+bh*.6,cz-.1,1));G.add(box(.35,.02,.35,'#ffc400',0,y0+bh+.012,-L*.28,1))}
+  if(lg==3)for(const s of[-1,1]){const r=new THREE.Mesh(new THREE.CylinderGeometry(.22,.22,.02,16),new THREE.MeshBasicMaterial({color:'#fff'}));r.rotation.z=Math.PI/2;r.position.set(s*.91,y0+bh*.6,cz-.1);G.add(r,box(.03,.1,.14,'#111',s*.93,y0+bh*.6,cz-.1,1))}
+  if(sv.turbo>0){const t=new THREE.Mesh(new THREE.CylinderGeometry(.16,.16,.34,12),new THREE.MeshLambertMaterial({color:['#aab','#4fc3ff','#ffb000'][sv.turbo-1]}));t.rotation.z=Math.PI/2;t.position.set(.5,y0+bh+.14,-L*.3);G.add(t,box(.1,.1,.5,'#777',.5,y0+bh+.05,-L*.3-.4))}}
+ const f=new THREE.Mesh(new THREE.ConeGeometry(.22,1.8,6),new THREE.MeshBasicMaterial({color:'#ffb000'}));f.rotation.x=Math.PI/2;f.position.set(0,.5,L/2+.9);f.visible=false;G.add(f);G.userData.fl=f;return G}
+let mC,aC,gcar,gon=0,gang=0;
+const uCost=()=>400+300*sv.turbo,WN=['መደበኛ','ትንሽ','ከፍተኛ','ግዙፍ','የለም'],LN=['የለም','መስመር','ባጅ','ክብ'];
+function newCars(){if(mC)sc.remove(mC,aC);mC=buildCar(me.b,me.col,1);aC=buildCar(ai.b,ai.col);sc.add(mC,aC)}
+function scene3d(){mC.position.set(1.6,0,-me.d+BP[me.b][0]/2);aC.position.set(-1.6,0,-ai.d+BP[ai.b][0]/2);
+ mC.userData.fl.visible=me.nit>0;aC.userData.fl.visible=ai.nit>0;sunM.position.z=-me.d-700;
+ cam.fov=55+Math.min(10,me.v*.15);cam.updateProjectionMatrix();cam.position.set(0,2.6,-me.d+9);cam.lookAt(0,1,-me.d-12);
+ R.render(sc,cam);g.drawImage(R.domElement,0,0,W,112)}
+function drawGarage(){if(gcar)sc.remove(gcar);gcar=buildCar(CARS[view].body,PAINT[sv.pc],1);gcar.position.set(2000,.2,0);sc.add(gcar);if(!gon){gon=1;gloop()}}
+function gloop(){if(st!=='idle'&&st!=='done'){gon=0;return}
+ gang+=.018;gcar.rotation.y=gang;cam.fov=40;cam.updateProjectionMatrix();cam.position.set(2000,2.4,9);cam.lookAt(2000,.9,0);
+ R.render(sc,cam);g.drawImage(R.domElement,75,0,250,224,0,0,W,H);
+ g.fillStyle='#fff';g.font='bold 10px monospace';g.fillText('ጋራዥ 3D',6,12);
+ if(!sv.own[view]){g.fillStyle='#ffc400';g.font='bold 14px monospace';g.fillText('ለሽያጭ $'+CARS[view].price,40,170)}
+ requestAnimationFrame(gloop)}
+hud();over('');
+</script></body></html>
