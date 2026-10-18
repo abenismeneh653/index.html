@@ -82,7 +82,7 @@ function drawGarage(){g.fillStyle='#23232b';g.fillRect(0,0,W,H);g.fillStyle='#30
 function finish(){st='done';const w=me.t!=null&&(ai.t==null||me.t<ai.t);sv.races++;
  const pay=w?250+sv.races*60:100;sv.money+=pay;if(me.t!=null&&(!sv.best||me.t<sv.best))sv.best=me.t;save();
  over((w?'አሸንፈዋል!':'ተሸንፈዋል')+'\nእርስዎ '+(me.t!=null?me.t.toFixed(2)+' ሰ':'አልጨረሰም')+'  ተቀናቃኝ '+(ai.t!=null?ai.t.toFixed(2)+' ሰ':'አልጨረሰም')+'\n+$'+pay)}
-function loop(t){if(st=='idle'||st=='done')return;const dt=Math.min(.05,(t-last)/1000);last=t;T+=dt;flT-=dt;
+function loop(t){ifg(racing =='idle'||st=='done')return;const dt=Math.min(.05,(t-last)/1000);last=t;T+=dt;flT-=dt;
  const Tr=T-2.8;
  if(st=='tree'&&Tr>=0){st='race';me.go=true;me.lr=me.rpm;const r=me.rpm;
   me.lbM=r>7600?Math.min(1,.7+.1*sv.tire):r<3500?.85:(r>5200&&r<7300?1.25:1);me.lbT=r>7600?1:1.5;
